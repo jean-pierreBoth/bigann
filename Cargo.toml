@@ -1,0 +1,57 @@
+[package]
+name = "bigann"
+version = "0.0.1"
+authors = ["jeanpierre.both@gmail.com"]
+repository = "https://github.com/jean-pierreBoth/bigann"
+description = "a benchmark for hnsw_rs "
+license = "MIT/Apache-2.0"
+readme = "README.md"
+keywords = ["ann", "benchmark"]
+documentation = "https://docs.rs/bigann"
+edition= "2021"
+
+
+[profile.release]
+lto = true
+opt-level = 3
+
+
+[[bin]]
+name = "bigann"
+path = "src/bin/bigann.rs"
+
+
+
+[dependencies]
+# default is version spec is ^ meaning can update up to max non null version number
+# cargo doc --no-deps avoid dependencies doc generation
+#
+
+
+
+hnsw_rs = {version = "0.1.15"}
+
+lazy_static = { version = "1.4"}
+
+# for io
+bincode = {version = "1.3"}
+byteorder = {version = "1.4"}
+
+cpu-time = {version = "1.0"}
+
+# decreasing order of log for debug build : (max_level_)trace debug info warn error off
+# decreasing order of log for release build (release_max_level_)  .. idem
+#log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+log = { version = "0.4"}
+env_logger = { version = "0.9"}
+
+# hack to avoid interaction bug with intel-mkl
+anyhow = { version = "<=1.0.48" }
+
+#openblas-src = {version = "0.10"}
+
+katexit = {version = "0.1.0"}
+
+
+
+
