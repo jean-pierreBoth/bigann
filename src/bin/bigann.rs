@@ -29,7 +29,7 @@ use hnsw_rs::hnsw::{DataId};
 
 const BIGANN_DIR : &'static str = "/home/jpboth/Data/ANN/BigANN";
 
-const DIM : usize = 100;
+const DIM : usize = 128;
 
 /// read learn.100M.u8bin or query.public.10K.u8bin
 fn read_data_block<const SIZE: usize>(data_buf : &mut BufReader<File>, nb_data: usize) -> Result< Vec<Vec<u8>>, anyhow::Error> {
@@ -38,16 +38,20 @@ fn read_data_block<const SIZE: usize>(data_buf : &mut BufReader<File>, nb_data: 
     let mut data = [0u8; SIZE];
     let mut datas = Vec::<Vec<u8>>::with_capacity(nb_data);
     for _ in 0..nb_data {
-        let nb_read = data_buf.read(&mut data)?;
-        match nb_read {
-            100 => { datas.push(data.to_vec()); }
-            0 => { // got EOF
-                    log::info!("read_data_block got EOF after {} vectors", datas.len());
-                    return Ok(datas);
-                 }
-            _ => {
-                    return Err(anyhow!("could read only {} dimensions", nb_read));
-            }
+        let read_res = data_buf.read_exact(&mut data);
+        if read_res.is_ok() {
+            datas.push(data.to_vec());
+        }
+        else {
+            match read_res.err().unwrap().kind() {
+                std::io::ErrorKind::UnexpectedEof => { // got EOF
+                        log::info!("read_data_block got EOF after {} vectors", datas.len());
+                        return Ok(datas);
+                    }
+                _ => {
+                        return Err(anyhow!("unexpected error"));
+                }
+            } // end match
         }
     } // end of for 
     return Ok(datas);
@@ -127,16 +131,20 @@ pub fn main() {
     let dirname = String::from(BIGANN_DIR);
     //
     let mut data_fname = dirname.clone();
-    data_fname.push_str("learn.100M.u8bin");
+    data_fname.push_str("/learn.100M.u8bin");
     //
     let mut query_fname = dirname.clone();
     query_fname.push_str("query.public.10K.u8bin");
     //
     let mut ground_truth_fname = dirname.clone();
-    ground_truth_fname.push_str("public_query_gt100.bin");
+    ground_truth_fname.push_str("/public_query_gt100.bin");
     //
     let path = PathBuf::from(data_fname);
-    let data_file = OpenOptions::new().read(true).open(&path).unwrap();
+    let data_file_res = OpenOptions::new().read(true).open(&path);
+    if data_file_res.is_err() {
+        log::error!("cannot open file : {:?}", path);
+    }
+    let data_file = data_file_res.unwrap();
     let mut data_buf = BufReader::new(data_file);
     //
     let nb_data : u32 = data_buf.read_u32::<LittleEndian>().unwrap();
@@ -160,7 +168,8 @@ pub fn main() {
     loop {
         let new_datas = read_data_block::<DIM>(&mut data_buf, block);
         if new_datas.is_err() {
-            std::panic!("read_data_block failed with error {:?}", new_datas.as_ref().err().unwrap());
+            log::error!("read_data_block , nb blocks read : {}", nb_data_read);
+            std::panic!("read_data_block failed with error: {:?}", new_datas.as_ref().err().unwrap());
         }
         let new_data = new_datas.unwrap();
         if new_data.len() == 0 {
@@ -168,9 +177,10 @@ pub fn main() {
         }
         // insert in Hnsw
         let data_with_id : Vec<(&Vec<u8>, DataId)>= new_data.iter().zip(0..new_data.len()).map(|v| (v.0, v.1 + nb_data_read)).collect();
-        hnsw.parallel_insert(&data_with_id);
+//        hnsw.parallel_insert(&data_with_id);
         nb_data_read += new_data.len();
         if nb_data_read == nb_data {
+            log::info!("exiting loop nb data read : {}", nb_data_read);
             break;
         }
     } // end of loop
@@ -201,6 +211,7 @@ pub fn main() {
     // TODO check knn is constant!?  
     let knbn = gtruth[0].len();
     let ef_search = 128;
-    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
-
+//    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
 } // end of main
