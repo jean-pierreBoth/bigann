@@ -29,6 +29,8 @@ use hnsw_rs::hnsw::{DataId};
 
 const BIGANN_DIR : &'static str = "/home/jpboth/Data/ANN/BigANN";
 
+const DIM : usize = 100;
+
 /// read learn.100M.u8bin or query.public.10K.u8bin
 fn read_data_block<const SIZE: usize>(data_buf : &mut BufReader<File>, nb_data: usize) -> Result< Vec<Vec<u8>>, anyhow::Error> {
     // read number of asked number of points of size size * u8 until EOF
@@ -54,15 +56,68 @@ fn read_data_block<const SIZE: usize>(data_buf : &mut BufReader<File>, nb_data: 
 
 
 // read ground truth format
-fn read_ground_truth(fname : String) -> Result< Vec<(u32, f32)>, anyhow::Error> {
+fn read_ground_truth(gt_fname : String) -> Result< Vec<Vec<(u32, f32)>>, anyhow::Error> {
     // read nbquery(uint32 little endian)
-
-    // read knn (uint32 little endian)
-    Err(anyhow!("not yet"))
+    let path = PathBuf::from(gt_fname);
+    let gt_file = OpenOptions::new().read(true).open(&path).unwrap();
+    let mut gt_buf = BufReader::new(gt_file);
+    let nb_query : usize = gt_buf.read_u32::<LittleEndian>().unwrap() as usize;
+    let knn : usize = gt_buf.read_u32::<LittleEndian>().unwrap() as usize; // get number of neighbours
+    log::info!("read_ground_truth got nb_query : {}, knn by answer : {}", nb_query, knn);
+    //
+    let mut ids = Vec::<Vec<u32>>::with_capacity(nb_query);
+    // now we have for each query : knn u32 giving its corresponding answers
+    for _ in 0..nb_query {
+        let mut curent_ids = Vec::<u32>::with_capacity(knn);
+        for _ in 0..knn {
+            let id = gt_buf.read_u32::<LittleEndian>().unwrap();
+            curent_ids.push(id);
+        }
+        ids.push(curent_ids);
+    }
+    // then for each data : knn f32 giving its distances
+    let mut distances = Vec::<Vec<f32>>::with_capacity(nb_query);
+    for _ in 0..nb_query {
+        let mut current_dists = Vec::<f32>::with_capacity(knn);
+        for _ in 0..knn {
+            let dist = gt_buf.read_f32::<LittleEndian>().unwrap();
+            current_dists.push(dist);
+        }
+        distances.push(current_dists);
+    }
+    // We zip the vectors to have all info on each request in one block
+    let mut ground_truth = Vec::<Vec<(u32, f32)>>::with_capacity(nb_query);
+    for q in 0..nb_query {
+        let mut q_answer = Vec::<(u32,f32)>::with_capacity(knn);
+        for k in 0..knn {
+            q_answer.push((ids[q][k],distances[q][k]));
+        }
+        ground_truth.push(q_answer);
+    }
+    //
+    return Ok(ground_truth);
 } // end of read_ground_truth
 
 
-const DIM : usize = 100;
+// read query vector
+fn read_query(query_fname : String) -> Result< Vec<Vec<u8>>, anyhow::Error> {
+    //
+    let path = PathBuf::from(query_fname);
+    let query_file = OpenOptions::new().read(true).open(&path).unwrap();
+    let mut query_buf = BufReader::new(query_file);
+    let nb_data : u32 = query_buf.read_u32::<LittleEndian>().unwrap();
+    let nb_data = nb_data as usize;
+    let dim = query_buf.read_u32::<LittleEndian>().unwrap() as usize;
+    log::info!("number of vectors to read : {}, dimension : {}", nb_data, dim);
+    if dim != DIM {
+        std::panic!("expected dim {}, got {}", DIM, dim);
+    }
+    let res = read_data_block::<DIM>(&mut query_buf, nb_data);
+    return res;
+} // end of read_query
+
+
+
 
 // TODO  clap args to avoid re filling a Hnsw if already existing somewhere
 pub fn main() {
@@ -74,8 +129,11 @@ pub fn main() {
     let mut data_fname = dirname.clone();
     data_fname.push_str("learn.100M.u8bin");
     //
-    let query_fname = dirname.clone().push_str("query.public.10K.u8bin");
-    let ground_truth = dirname.clone().push_str("public_query_gt100.bin");
+    let mut query_fname = dirname.clone();
+    query_fname.push_str("query.public.10K.u8bin");
+    //
+    let mut ground_truth_fname = dirname.clone();
+    ground_truth_fname.push_str("public_query_gt100.bin");
     //
     let path = PathBuf::from(data_fname);
     let data_file = OpenOptions::new().read(true).open(&path).unwrap();
@@ -102,7 +160,7 @@ pub fn main() {
     loop {
         let new_datas = read_data_block::<DIM>(&mut data_buf, block);
         if new_datas.is_err() {
-            std::panic!("read_data_block failed with error {:?}", new_datas.as_ref());
+            std::panic!("read_data_block failed with error {:?}", new_datas.as_ref().err().unwrap());
         }
         let new_data = new_datas.unwrap();
         if new_data.len() == 0 {
@@ -119,5 +177,30 @@ pub fn main() {
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
+    //
+    // load ground truth to know how many neighbours we must search
+    //
+    let gtruth = read_ground_truth(ground_truth_fname.clone());
+    if gtruth.is_err() {
+        log::error!("error opening ground truth file : {}, err : {:?}", ground_truth_fname, gtruth.as_ref().err().unwrap());
+    }
+    let gtruth = gtruth.unwrap();
+    //
+    // read queries
+    //
+    let query = read_query(query_fname);
+    if query.is_err() {
+        std::panic!("could not read queries, error : {:?}", query.as_ref().err().unwrap());
+    }
+    let query = query.unwrap();
+    log::info!("loaded nb_query : {}", query.len());
+    //
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now(); 
+    log::info!("starting requests"); 
+    // TODO check knn is constant!?  
+    let knbn = gtruth[0].len();
+    let ef_search = 128;
+    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
 
 } // end of main
