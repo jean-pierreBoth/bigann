@@ -39,6 +39,8 @@ byteorder = {version = "1.4"}
 
 cpu-time = {version = "1.0"}
 
+clap = {version = "3.1", features = ["derive"] }
+
 # decreasing order of log for debug build : (max_level_)trace debug info warn error off
 # decreasing order of log for release build (release_max_level_)  .. idem
 #log = { version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
