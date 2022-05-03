@@ -137,7 +137,7 @@ pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
     // 
-    let bigann_cmd = Command::new("bigann")
+    let bigann_arg = Command::new("bigann")
         .arg(Arg::new("dirname")
             .long("dir")
             .takes_value(true)
@@ -148,9 +148,53 @@ pub fn main() {
             .help("expecting numberof data to run on : 10 100 or 1000"))
         .arg(Arg::new("hnsw")
             .long("hnsw")
-            .help("name to use to access to name.hnsw.data and name.hnsw.graph"));
+            .takes_value(true)
+            .help("name to use to access to name.hnsw.data and name.hnsw.graph"))
+        .get_matches();
     //
-    let dirname = String::from(BIGANN_DIR);
+    // parse cmd
+    //
+    let dirname = match bigann_arg.value_of("dirname") {
+        Some(str) => {
+                String::from(str)
+        }
+        _ => {
+            println!("--dirname mandatory");
+            std::process::exit(1);
+        }
+    };
+    let nb_data = match bigann_arg.value_of("nbdata") {
+        Some(str) => {
+            let res = str.parse::<usize>();
+            if res.is_ok() {
+                res.unwrap()
+            }
+            else {
+                println!("could not parse nb_data");
+                std::process::exit(1);                
+            }
+        }
+        _ => {
+            println!("--dirname mandatory");
+            std::process::exit(1);
+        }
+    };
+    log::info!("running on first : {}", nb_data);
+    // get hnsw if any
+    let mut hnsw_name : Option<String> = None;
+    if bigann_arg.is_present("hnsw") {
+        let hnsw = bigann_arg.value_of("hnsw").ok_or("").unwrap().parse::<String>().unwrap();
+        if hnsw == "" {
+            println!("parsing of hnsw_name failed");
+            std::process::exit(1);
+        }
+        else {
+            log::info!("got hnsw name : {}", hnsw);
+            hnsw_name = Some(hnsw.clone());
+        }
+    }
+
+
     //
     let mut data_fname = PathBuf::from(dirname.clone());
     data_fname.push("bigann_base.bvecs");
@@ -170,7 +214,6 @@ pub fn main() {
     let data_file = data_file_res.unwrap();
     let mut data_buf = BufReader::new(data_file);
     //
-    let nb_data = 10_000_000 as usize;
     // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
     let ef_c = 64;
     let max_nb_connection = 100;
