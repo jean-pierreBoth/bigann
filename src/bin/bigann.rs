@@ -27,17 +27,23 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{DataId};
 
-const BIGANN_DIR : &'static str = "/home/jpboth/Data/ANN/BigANN";
+// const BIGANN_DIR : &'static str = "/home/jpboth/Data/ANN/BigANN";
+const BIGANN_DIR : &'static str = "/home.2/jpboth/Data/Ann/BigAnn";
 
 const DIM : usize = 128;
 
-/// read learn.100M.u8bin or query.public.10K.u8bin
+/// read data from .bvecs file
 fn read_data_block<const SIZE: usize>(data_buf : &mut BufReader<File>, nb_data: usize) -> Result< Vec<Vec<u8>>, anyhow::Error> {
     // read number of asked number of points of size size * u8 until EOF
     //
     let mut data = [0u8; SIZE];
     let mut datas = Vec::<Vec<u8>>::with_capacity(nb_data);
     for _ in 0..nb_data {
+        let dim = data_buf.read_u32::<LittleEndian>().unwrap();
+        if dim as usize != SIZE {
+            log::error!("data has not the correct dimenson, found : {} expected {}", dim, SIZE);
+            return Err(anyhow!("data has not the correct dimenson, found : {} expected {}", dim, SIZE));
+        }
         let read_res = data_buf.read_exact(&mut data);
         if read_res.is_ok() {
             datas.push(data.to_vec());
@@ -107,7 +113,7 @@ fn read_ground_truth(path : PathBuf) -> Result< Vec<Vec<(u32, f32)>>, anyhow::Er
 
 
 // read query vector
-fn read_query(path : PathBuf) -> Result< Vec<Vec<u8>>, anyhow::Error> {
+fn read_query(path : PathBuf, nb_data : usize) -> Result< Vec<Vec<u8>>, anyhow::Error> {
     //
     let query_file = OpenOptions::new().read(true).open(&path);
     if query_file.is_err() {
@@ -115,13 +121,6 @@ fn read_query(path : PathBuf) -> Result< Vec<Vec<u8>>, anyhow::Error> {
     }
     let query_file = query_file.unwrap();
     let mut query_buf = BufReader::new(query_file);
-    let nb_data : u32 = query_buf.read_u32::<LittleEndian>().unwrap();
-    let nb_data = nb_data as usize;
-    let dim = query_buf.read_u32::<LittleEndian>().unwrap() as usize;
-    log::info!("number of vectors to read : {}, dimension : {}", nb_data, dim);
-    if dim != DIM {
-        std::panic!("expected dim {}, got {}", DIM, dim);
-    }
     let res = read_data_block::<DIM>(&mut query_buf, nb_data);
     return res;
 } // end of read_query
@@ -137,13 +136,14 @@ pub fn main() {
     let dirname = String::from(BIGANN_DIR);
     //
     let mut data_fname = PathBuf::from(dirname.clone());
-    data_fname.push("learn.100M.u8bin");
+    data_fname.push("bigann_base.bvecs");
     //
     let mut query_fname = PathBuf::from(dirname.clone());
-    query_fname.push("query.public.10K.u8bin");
+    query_fname.push("bigann_query.bvecs");
     //
     let mut ground_truth_fname = PathBuf::from(dirname.clone());
-    ground_truth_fname.push("public_query_gt100.bin");
+    // read ground truth for 100 knn for the first 10M vectors
+    ground_truth_fname.push("bigann-gt-10M");
     //
     let path = PathBuf::from(data_fname);
     let data_file_res = OpenOptions::new().read(true).open(&path);
@@ -153,26 +153,24 @@ pub fn main() {
     let data_file = data_file_res.unwrap();
     let mut data_buf = BufReader::new(data_file);
     //
-    let nb_data : u32 = data_buf.read_u32::<LittleEndian>().unwrap();
-    let nb_data = nb_data as usize;
-    let dim = data_buf.read_u32::<LittleEndian>().unwrap() as usize;
-    log::info!("number of vectors to read : {}, dimension : {}", nb_data, dim);
-    if dim != DIM {
-        std::panic!("expected dim {}, got {}", DIM, dim);
-    }
+    let nb_data = 10_000_000 as usize;
     // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
     let ef_c = 64;
     let max_nb_connection = 100;
     let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
-    let block : usize = 10000;
+    let default_block : usize = 10000;
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
     let hnsw = Hnsw::<u8, DistL2>::new(max_nb_connection, nb_data, nb_layer, ef_c, DistL2{});
     // now we loop reading inserting
     let mut nb_data_read = 0;
+    //==============  When reading is ok set test to true
     let test = false;
+    //==============
     loop {
+        // we adjust block to read to get exactly nb_data
+        let block = if nb_data_read + default_block < nb_data { default_block } else { nb_data - nb_data_read};
         let new_datas = read_data_block::<DIM>(&mut data_buf, block);
         if new_datas.is_err() {
             log::error!("read_data_block , nb blocks read : {}", nb_data_read);
@@ -200,7 +198,7 @@ pub fn main() {
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
     // dump in a file. Must take care of name as tests runs in // !!!
-    if test {
+    if !test {
         let fname = String::from("dumpbigann");
         log::info!("dumping in files : {} ... ", fname);
         let _res = hnsw.file_dump(&fname); 
@@ -217,7 +215,8 @@ pub fn main() {
     //
     // read queries
     //
-    let query = read_query(query_fname);
+    let nb_query = 10000;
+    let query = read_query(query_fname, nb_query);
     if query.is_err() {
         std::panic!("could not read queries, error : {:?}", query.as_ref().err().unwrap());
     }
