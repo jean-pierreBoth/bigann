@@ -167,14 +167,18 @@ fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, test : bool) -> R
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
-    // dump in a file. Must take care of name as tests runs in // !!!
-    if !test {
+    // dump in a file. Must take care of name as tests runs in //
+    let dump = false;
+    if dump {
         let fname = String::from("dumpbigann");
         log::info!("dumping in files : {} ... ", fname);
         let _res = hnsw.file_dump(&fname); 
         log::info!("dump finished");
-    }   
-    Err(anyhow!("not yet"))
+    }
+    //
+    log::debug!("fill_hnsw finished");
+    //
+    Ok(hnsw)
 }  // end of fill_hnsw
 
 
@@ -187,6 +191,7 @@ pub fn main() {
         .arg(Arg::new("dirname")
             .long("dir")
             .takes_value(true)
+            .required(true)
             .help("expecting dirname containing .bvecs"))
         .arg(Arg::new("nbdata")
             .long("nbdata")
@@ -202,33 +207,21 @@ pub fn main() {
     //
     let dirname = match bigann_arg.value_of("dirname") {
         Some(str) => {
-                String::from(str)
+            String::from(str)
         }
         _ => {
-            println!("--dirname mandatory");
+            println!("--dir mandatory");
             std::process::exit(1);
         }
     };
-    let nb_data = match bigann_arg.value_of("nbdata") {
-        Some(str) => {
-            let res = str.parse::<usize>();
-            if res.is_ok() {
-                res.unwrap()
-            }
-            else {
-                println!("could not parse nb_data");
-                std::process::exit(1);                
-            }
-        }
-        _ => {
-            println!("--dirname mandatory");
-            std::process::exit(1);
-        }
-    };
+    log::debug!("got dir : {}", dirname);
+
+    let mut nb_data = 0;
     log::info!("running on first : {}", nb_data);
     // get hnsw if any
     let mut hnsw_name : Option<String> = None;
     if bigann_arg.is_present("hnsw") {
+        log::debug!("hnsw present");
         let hnsw = bigann_arg.value_of("hnsw").ok_or("").unwrap().parse::<String>().unwrap();
         if hnsw == "" {
             println!("parsing of hnsw_name failed");
@@ -238,7 +231,32 @@ pub fn main() {
             log::info!("got hnsw name : {}", hnsw);
             hnsw_name = Some(hnsw.clone());
         }
+    } else {
+        // no hnsw, we must have nb_data to know what we must read
+        nb_data = match bigann_arg.value_of("nbdata") {
+            Some(str) => {
+                let res = str.parse::<usize>();
+                if res.is_ok() {
+                    res.unwrap()
+                }
+                else {
+                    println!("could not parse nb_data");
+                    std::process::exit(1);                
+                }
+            }
+            _ => {
+                println!("--nbdata mandatory");
+                std::process::exit(1);
+            }
+        };
+        log::info!("got nb_data : {}", nb_data);
+        if nb_data >= 10 && nb_data != 10 && nb_data != 100 && nb_data != 1000 {
+            log::error!("nb_data must be 1, 10, 100 or 1000");
+            std::process::exit(1);
+        };
+        nb_data *= 1_000_000;
     }
+
     //
     let mut query_fname = PathBuf::from(dirname.clone());
     query_fname.push("bigann_query.bvecs");
@@ -251,6 +269,7 @@ pub fn main() {
     let test = true;
     let hnsw_res = if hnsw_name.is_none() {
         log::info!("no hnsw to reload from, will read data from file bigann_base.bvecs in dir : {}", dirname);
+        assert!(nb_data > 0);
         let mut data_fname = PathBuf::from(dirname.clone());
         data_fname.push("bigann_base.bvecs");
         let path = PathBuf::from(data_fname);
@@ -324,10 +343,37 @@ pub fn main() {
     let sys_now = SystemTime::now(); 
     log::info!("starting requests"); 
     // TODO check knn is constant!?  
-    let knbn = gtruth[0].len();
+    let knbn = 10;
     let ef_search = 128;
 
     let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
     let cpu_time: Duration = cpu_start.elapsed();
+    let sys_time = sys_now.elapsed().unwrap().as_micros() as f32;
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    let mut recalls = Vec::<usize>::with_capacity(nb_query);
+    let mut nb_returned = Vec::<usize>::with_capacity(nb_query);
+    let mut last_distances_ratio = Vec::<f32>::with_capacity(nb_query);
+    // now compute recall rate
+    for i in 0..nb_query {
+        let answer = &gtruth[i];
+        if answer.len() <= 0 {
+            std::process::exit(1);
+        }
+        let max_dist = answer[answer.len() - 1].1;
+        let mut _knn_neighbours_id : Vec<usize> = knn_answers[i].iter().map(|p| p.d_id).collect();
+        let knn_neighbours_dist : Vec<f32> = knn_answers[i].iter().map(|p| p.distance).collect();
+        nb_returned.push(answer.len());
+        // count how many distances of knn_neighbours_dist are less than
+        let recall = knn_neighbours_dist.iter().filter(|x| *x <= &max_dist).count();
+        recalls.push(recall);
+        let mut ratio = 0.;
+        if knn_neighbours_dist.len() >= 1 {
+            ratio = knn_neighbours_dist[knn_neighbours_dist.len()-1]/max_dist;
+        }
+        last_distances_ratio.push(ratio);
+    }
+    let mean_recall = (recalls.iter().sum::<usize>() as f32)/((knbn * recalls.len()) as f32);
+    println!("\n recall rate for  {:?} , nb req /s {:?}", mean_recall, (nb_query as f32)*1.0e+6_f32/sys_time);
+
+
 } // end of main
