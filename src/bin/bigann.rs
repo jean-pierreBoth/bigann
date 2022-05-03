@@ -20,7 +20,7 @@ use cpu_time::ProcessTime;
 
 use anyhow::{anyhow};
 
-use clap::{Arg,Command, ArgMatches};
+use clap::{Arg,Command};
 
 use std::io::prelude::*;
 use std::io::{BufReader};
@@ -30,9 +30,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::{DataId};
-
-// const BIGANN_DIR : &'static str = "/home/jpboth/Data/ANN/BigANN";
-const BIGANN_DIR : &'static str = "/home.2/jpboth/Data/Ann/BigAnn";
+use hnsw_rs::hnswio::*;
 
 const DIM : usize = 128;
 
@@ -130,6 +128,54 @@ fn read_query(path : PathBuf, nb_data : usize) -> Result< Vec<Vec<u8>>, anyhow::
 } // end of read_query
 
 
+// read data and construct hnsw
+fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, test : bool) -> Result<Hnsw::<u8, DistL2>, anyhow::Error> {
+    //
+    // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
+    let ef_c = 64;
+    let max_nb_connection = 100;
+    let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
+    let default_block : usize = 10000;
+    //
+    let cpu_start = ProcessTime::now();
+    let sys_now = SystemTime::now();
+    let hnsw = Hnsw::<u8, DistL2>::new(max_nb_connection, nb_data, nb_layer, ef_c, DistL2{});
+    let mut nb_data_read = 0;
+    loop {
+        // we adjust block to read to get exactly nb_data
+        let block = if nb_data_read + default_block < nb_data { default_block } else { nb_data - nb_data_read};
+        let new_datas = read_data_block::<DIM>(data_buf, block);
+        if new_datas.is_err() {
+            log::error!("read_data_block , nb blocks read : {}", nb_data_read);
+            std::panic!("read_data_block failed with error: {:?}", new_datas.as_ref().err().unwrap());
+        }
+        let new_data = new_datas.unwrap();
+        if new_data.len() == 0 {
+            break;
+        }
+        // insert in Hnsw
+        let data_with_id : Vec<(&Vec<u8>, DataId)>= new_data.iter().zip(0..new_data.len()).map(|v| (v.0, v.1 + nb_data_read)).collect();
+        if !test {
+            hnsw.parallel_insert(&data_with_id);
+        }
+        nb_data_read += new_data.len();
+        if nb_data_read == nb_data {
+            log::info!("exiting loop nb data read : {}", nb_data_read);
+            break;
+        }
+    } // end of loop
+    let cpu_time: Duration = cpu_start.elapsed();
+    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    hnsw.dump_layer_info();
+    // dump in a file. Must take care of name as tests runs in // !!!
+    if !test {
+        let fname = String::from("dumpbigann");
+        log::info!("dumping in files : {} ... ", fname);
+        let _res = hnsw.file_dump(&fname); 
+        log::info!("dump finished");
+    }   
+    Err(anyhow!("not yet"))
+}  // end of fill_hnsw
 
 
 // TODO  clap args to avoid re filling a Hnsw if already existing somewhere
@@ -193,11 +239,6 @@ pub fn main() {
             hnsw_name = Some(hnsw.clone());
         }
     }
-
-
-    //
-    let mut data_fname = PathBuf::from(dirname.clone());
-    data_fname.push("bigann_base.bvecs");
     //
     let mut query_fname = PathBuf::from(dirname.clone());
     query_fname.push("bigann_query.bvecs");
@@ -206,61 +247,60 @@ pub fn main() {
     // read ground truth for 100 knn for the first 10M vectors
     ground_truth_fname.push("bigann-gt-10M");
     //
-    let path = PathBuf::from(data_fname);
-    let data_file_res = OpenOptions::new().read(true).open(&path);
-    if data_file_res.is_err() {
-        log::error!("cannot open file : {:?}", path);
+    // if test is true we run without doing the hnsw insertion, this enbales testing
+    let test = true;
+    let hnsw_res = if hnsw_name.is_none() {
+        log::info!("no hnsw to reload from, will read data from file bigann_base.bvecs in dir : {}", dirname);
+        let mut data_fname = PathBuf::from(dirname.clone());
+        data_fname.push("bigann_base.bvecs");
+        let path = PathBuf::from(data_fname);
+        let data_file_res = OpenOptions::new().read(true).open(&path);
+        if data_file_res.is_err() {
+            log::error!("cannot open file : {:?}", path);
+        }
+        let data_file = data_file_res.unwrap();
+        let mut data_buf = BufReader::new(data_file);
+        fill_hnsw(&mut data_buf, nb_data, test)
     }
-    let data_file = data_file_res.unwrap();
-    let mut data_buf = BufReader::new(data_file);
+    else {
+        log::info!(" hnsw passed , will reload from hnsw data in dir : {}", dirname);
+        let hnsw_str = hnsw_name.unwrap();
+        let mut graphfname = hnsw_str.clone();
+        graphfname.push_str(".hnsw.graph");
+        let mut graphpath = PathBuf::new();
+        graphpath.push(dirname.clone());
+        graphpath.push(graphfname);
+        let graphfileres = OpenOptions::new().read(true).open(&graphpath);
+        if graphfileres.is_err() {
+            println!("could not open file {:?}", graphpath.as_os_str());
+            std::panic::panic_any("hnsw reload: could not open file".to_string());            
+        }
+        let graphfile = graphfileres.unwrap();
+        let mut graph_in = BufReader::new(graphfile);
+        let hnsw_description = load_description(&mut graph_in).unwrap();
+
+        let mut datafname =  hnsw_str.clone();
+        datafname.push_str(".hnsw.data");
+        let mut datapath = PathBuf::new();
+        datapath.push(dirname.clone());
+        datapath.push(datafname);
+        let datafileres = OpenOptions::new().read(true).open(&datapath);
+        if datafileres.is_err() {
+            println!("could not open file {:?}", datapath.as_os_str());
+            std::panic::panic_any("hnsw reload: could not open file".to_string());            
+        }
+        let datafile = datafileres.unwrap();
+        let mut data_in = BufReader::new(datafile);
+        let hnsw_loaded : Hnsw<u8,DistL2>= load_hnsw(&mut graph_in, &hnsw_description, &mut data_in).unwrap();
+        //
+        Ok(hnsw_loaded)
+    };
     //
-    // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
-    let ef_c = 64;
-    let max_nb_connection = 100;
-    let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
-    let default_block : usize = 10000;
-    //
-    let cpu_start = ProcessTime::now();
-    let sys_now = SystemTime::now();
-    let hnsw = Hnsw::<u8, DistL2>::new(max_nb_connection, nb_data, nb_layer, ef_c, DistL2{});
-    // now we loop reading inserting
-    let mut nb_data_read = 0;
-    //==============  When reading is ok set test to true
-    let test = false;
-    //==============
-    loop {
-        // we adjust block to read to get exactly nb_data
-        let block = if nb_data_read + default_block < nb_data { default_block } else { nb_data - nb_data_read};
-        let new_datas = read_data_block::<DIM>(&mut data_buf, block);
-        if new_datas.is_err() {
-            log::error!("read_data_block , nb blocks read : {}", nb_data_read);
-            std::panic!("read_data_block failed with error: {:?}", new_datas.as_ref().err().unwrap());
-        }
-        let new_data = new_datas.unwrap();
-        if new_data.len() == 0 {
-            break;
-        }
-        // insert in Hnsw
-        let data_with_id : Vec<(&Vec<u8>, DataId)>= new_data.iter().zip(0..new_data.len()).map(|v| (v.0, v.1 + nb_data_read)).collect();
-        if !test {
-            hnsw.parallel_insert(&data_with_id);
-        }
-        nb_data_read += new_data.len();
-        if nb_data_read == nb_data {
-            log::info!("exiting loop nb data read : {}", nb_data_read);
-            break;
-        }
-    } // end of loop
-    let cpu_time: Duration = cpu_start.elapsed();
-    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
-    hnsw.dump_layer_info();
-    // dump in a file. Must take care of name as tests runs in // !!!
-    if !test {
-        let fname = String::from("dumpbigann");
-        log::info!("dumping in files : {} ... ", fname);
-        let _res = hnsw.file_dump(&fname); 
-        log::info!("dump finished");
-    }   
+    if hnsw_res.is_err() {
+        log::error!("could not get hnsw");
+        std::process::exit(1);
+    }
+    let hnsw = hnsw_res.unwrap();
     //
     // load ground truth to know how many neighbours we must search
     //
@@ -286,7 +326,8 @@ pub fn main() {
     // TODO check knn is constant!?  
     let knbn = gtruth[0].len();
     let ef_search = 128;
-//    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
+
+    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
     let cpu_time: Duration = cpu_start.elapsed();
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
 } // end of main
