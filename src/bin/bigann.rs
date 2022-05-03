@@ -1,10 +1,14 @@
 //! test BigANN benchmark with 100M points u8 in d = 128.
-//! 
+//! command syntax is:
+//! bigann --dir filesdir [--hnsw name] --nbdata nbdata
+//! where :
+//!     -  --dir filedir gives directory where data query files are.
+//!     -  --hnsw name is optional and gives nale of dump of hnsw to reload (useful to change query parameters
+//!     -  --nbdata nbdata gives the number of data (in millions) to run on. expect 10 100 or 1000
 
 
-
-// learn.100M.u8bin and query.public.10K.u8bin format
-// nb points , dimension as uint32 little endian
+// learn and query format : for each data : get dim on u32 little endian then for each d * data value 
+// so 4 + d * size of data in bytes
 // Then each point, each dim u8
 //
 //  ground truth format
@@ -16,9 +20,9 @@ use cpu_time::ProcessTime;
 
 use anyhow::{anyhow};
 
+use clap::{Arg,Command, ArgMatches};
 
 use std::io::prelude::*;
-
 use std::io::{BufReader};
 use std::fs::{File, OpenOptions};
 use std::path::{PathBuf};
@@ -132,6 +136,19 @@ fn read_query(path : PathBuf, nb_data : usize) -> Result< Vec<Vec<u8>>, anyhow::
 pub fn main() {
     //
     let _ = env_logger::builder().is_test(true).try_init();
+    // 
+    let bigann_cmd = Command::new("bigann")
+        .arg(Arg::new("dirname")
+            .long("dir")
+            .takes_value(true)
+            .help("expecting dirname containing .bvecs"))
+        .arg(Arg::new("nbdata")
+            .long("nbdata")
+            .takes_value(true)
+            .help("expecting numberof data to run on : 10 100 or 1000"))
+        .arg(Arg::new("hnsw")
+            .long("hnsw")
+            .help("name to use to access to name.hnsw.data and name.hnsw.graph"));
     //
     let dirname = String::from(BIGANN_DIR);
     //
@@ -186,9 +203,6 @@ pub fn main() {
             hnsw.parallel_insert(&data_with_id);
         }
         nb_data_read += new_data.len();
-        if !test {
-            nb_data_read += new_data.len();
-        }
         if nb_data_read == nb_data {
             log::info!("exiting loop nb data read : {}", nb_data_read);
             break;
