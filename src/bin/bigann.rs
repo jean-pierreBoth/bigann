@@ -129,11 +129,9 @@ fn read_query(path : PathBuf, nb_data : usize) -> Result< Vec<Vec<u8>>, anyhow::
 
 
 // read data and construct hnsw
-fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, test : bool) -> Result<Hnsw::<u8, DistL2>, anyhow::Error> {
+fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, ef_c : usize, max_nb_connection : usize, test : bool) -> Result<Hnsw::<u8, DistL2>, anyhow::Error> {
     //
     // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
-    let ef_c = 64;
-    let max_nb_connection = 100;
     let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
     let default_block : usize = 10000;
     //
@@ -268,6 +266,11 @@ pub fn main() {
     // if test is true we run without doing the hnsw insertion, this enbales testing
     let test = false;
     let hnsw_res = if hnsw_name.is_none() {
+        // parameters to initialize hnsw
+        // =============================
+        let ef_c :  usize  = 100;
+        let max_nb_connection : usize = 24;
+        //=============================
         log::info!("no hnsw to reload from, will read data from file bigann_base.bvecs in dir : {}", dirname);
         assert!(nb_data > 0);
         let mut data_fname = PathBuf::from(dirname.clone());
@@ -279,7 +282,7 @@ pub fn main() {
         }
         let data_file = data_file_res.unwrap();
         let mut data_buf = BufReader::new(data_file);
-        fill_hnsw(&mut data_buf, nb_data, test)
+        fill_hnsw(&mut data_buf, nb_data, ef_c, max_nb_connection, test)
     }
     else {
         log::info!(" hnsw passed , will reload from hnsw data in dir : {}", dirname);
