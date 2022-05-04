@@ -266,7 +266,7 @@ pub fn main() {
     ground_truth_fname.push("bigann-gt-10M");
     //
     // if test is true we run without doing the hnsw insertion, this enbales testing
-    let test = true;
+    let test = false;
     let hnsw_res = if hnsw_name.is_none() {
         log::info!("no hnsw to reload from, will read data from file bigann_base.bvecs in dir : {}", dirname);
         assert!(nb_data > 0);
@@ -343,9 +343,12 @@ pub fn main() {
     let sys_now = SystemTime::now(); 
     log::info!("starting requests"); 
     // TODO check knn is constant!?  
-    let knbn = 10;
     let ef_search = 128;
-
+    //
+    // first search with knn = 10
+    //
+    let knbn = 10;
+    log::info!("Results with knbn : {}", knbn);
     let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
     let cpu_time: Duration = cpu_start.elapsed();
     let sys_time = sys_now.elapsed().unwrap().as_micros() as f32;
@@ -359,7 +362,8 @@ pub fn main() {
         if answer.len() <= 0 {
             std::process::exit(1);
         }
-        let max_dist = answer[answer.len() - 1].1;
+        // it seems that ground truth returns || a-b||**2 !!!
+        let max_dist = answer[knbn-1].1.sqrt();
         let mut _knn_neighbours_id : Vec<usize> = knn_answers[i].iter().map(|p| p.d_id).collect();
         let knn_neighbours_dist : Vec<f32> = knn_answers[i].iter().map(|p| p.distance).collect();
         nb_returned.push(answer.len());
@@ -371,9 +375,60 @@ pub fn main() {
             ratio = knn_neighbours_dist[knn_neighbours_dist.len()-1]/max_dist;
         }
         last_distances_ratio.push(ratio);
+        if i <= 10 {
+            log::debug!("request num : {}", i);
+            log::debug!("distances found : {:?}", knn_neighbours_dist);
+            log::debug!("ids found : {:?}", _knn_neighbours_id);
+            for i in 0..knbn {
+                log::debug!("ground truth id : {}, distance : {:.3e}", answer[i].0, answer[i].1.sqrt());
+            }
+        }
     }
     let mean_recall = (recalls.iter().sum::<usize>() as f32)/((knbn * recalls.len()) as f32);
     println!("\n recall rate for  {:?} , nb req /s {:?}", mean_recall, (nb_query as f32)*1.0e+6_f32/sys_time);
+    println!("\n last distances ratio {:?} ", last_distances_ratio.iter().sum::<f32>() / last_distances_ratio.len() as f32);
 
-
+    //
+    // first search with knn = 10
+    //
+    let knbn = 100;
+    log::info!("Results with knbn : {}", knbn);
+    let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
+    let cpu_time: Duration = cpu_start.elapsed();
+    let sys_time = sys_now.elapsed().unwrap().as_micros() as f32;
+    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    let mut recalls = Vec::<usize>::with_capacity(nb_query);
+    let mut nb_returned = Vec::<usize>::with_capacity(nb_query);
+    let mut last_distances_ratio = Vec::<f32>::with_capacity(nb_query);
+    // now compute recall rate
+    for i in 0..nb_query {
+        let answer = &gtruth[i];
+        if answer.len() <= 0 {
+            std::process::exit(1);
+        }
+        // it seems that ground truth returns || a-b||**2 !!!
+        let max_dist = answer[knbn-1].1.sqrt();
+        let mut _knn_neighbours_id : Vec<usize> = knn_answers[i].iter().map(|p| p.d_id).collect();
+        let knn_neighbours_dist : Vec<f32> = knn_answers[i].iter().map(|p| p.distance).collect();
+        nb_returned.push(answer.len());
+        // count how many distances of knn_neighbours_dist are less than
+        let recall = knn_neighbours_dist.iter().filter(|x| *x <= &max_dist).count();
+        recalls.push(recall);
+        let mut ratio = 0.;
+        if knn_neighbours_dist.len() >= 1 {
+            ratio = knn_neighbours_dist[knn_neighbours_dist.len()-1]/max_dist;
+        }
+        last_distances_ratio.push(ratio);
+        if i <= 10 {
+            log::debug!("request num : {}", i);
+            log::debug!("distances found : {:?}", knn_neighbours_dist);
+            log::debug!("ids found : {:?}", _knn_neighbours_id);
+            for i in 0..knbn {
+                log::debug!("ground truth id : {}, distance : {:.3e}", answer[i].0, answer[i].1.sqrt());
+            }
+        }
+    }
+    let mean_recall = (recalls.iter().sum::<usize>() as f32)/((knbn * recalls.len()) as f32);
+    println!("\n recall rate for  {:?} , nb req /s {:?}", mean_recall, (nb_query as f32)*1.0e+6_f32/sys_time);
+    println!("\n last distances ratio {:?} ", last_distances_ratio.iter().sum::<f32>() / last_distances_ratio.len() as f32);
 } // end of main

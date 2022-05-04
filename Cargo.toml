@@ -6,8 +6,7 @@ repository = "https://github.com/jean-pierreBoth/bigann"
 description = "a benchmark for hnsw_rs "
 license = "MIT/Apache-2.0"
 readme = "README.md"
-keywords = ["ann", "benchmark"]
-documentation = "https://docs.rs/bigann"
+keywords = ["ann", "hnsw-rs", "benchmark"]
 edition= "2021"
 
 
@@ -29,6 +28,7 @@ path = "src/bin/bigann.rs"
 
 
 
+# hnsw_rs = {path = "../hnswlib-rs", version = "0.1.15"}
 hnsw_rs = {version = "0.1.15"}
 
 lazy_static = { version = "1.4"}
@@ -48,11 +48,9 @@ log = { version = "0.4"}
 env_logger = { version = "0.9"}
 
 # hack to avoid interaction bug with intel-mkl
-anyhow = { version = "<=1.0.48" }
+anyhow = { version = "1.0" }
 
-#openblas-src = {version = "0.10"}
 
-katexit = {version = "0.1.0"}
 
 
 
