@@ -260,16 +260,19 @@ pub fn main() {
     query_fname.push("bigann_query.bvecs");
     //
     let mut ground_truth_fname = PathBuf::from(dirname.clone());
-    // read ground truth for 100 knn for the first 10M vectors
-    ground_truth_fname.push("bigann-gt-10M");
+    // read ground truth for 100 knn for the first 10M vectors. To modify to run on 100M or whole data
+    //================================================================================================
+    let gt_fname = "bigann-gt-10M";
+    ground_truth_fname.push(gt_fname);
     //
     // if test is true we run without doing the hnsw insertion, this enbales testing
     let test = false;
     let hnsw_res = if hnsw_name.is_none() {
         // parameters to initialize hnsw
         // =============================
-        let ef_c :  usize  = 100;
+        let ef_c :  usize  = 400;
         let max_nb_connection : usize = 24;
+
         //=============================
         log::info!("no hnsw to reload from, will read data from file bigann_base.bvecs in dir : {}", dirname);
         assert!(nb_data > 0);
@@ -422,7 +425,7 @@ pub fn main() {
             ratio = knn_neighbours_dist[knn_neighbours_dist.len()-1]/max_dist;
         }
         last_distances_ratio.push(ratio);
-        if i <= 10 {
+        if i <= 5 {
             log::debug!("request num : {}", i);
             log::debug!("distances found : {:?}", knn_neighbours_dist);
             log::debug!("ids found : {:?}", _knn_neighbours_id);
