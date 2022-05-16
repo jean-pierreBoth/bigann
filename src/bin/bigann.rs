@@ -270,7 +270,7 @@ pub fn main() {
     let hnsw_res = if hnsw_name.is_none() {
         // parameters to initialize hnsw
         // =============================
-        let ef_c :  usize  = 400;
+        let ef_c :  usize  = 800;
         let max_nb_connection : usize = 24;
 
         //=============================
@@ -358,7 +358,7 @@ pub fn main() {
     let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
     let cpu_time: Duration = cpu_start.elapsed();
     let sys_time = sys_now.elapsed().unwrap().as_micros() as f32;
-    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    println!(" ann requests sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     let mut recalls = Vec::<usize>::with_capacity(nb_query);
     let mut nb_returned = Vec::<usize>::with_capacity(nb_query);
     let mut last_distances_ratio = Vec::<f32>::with_capacity(nb_query);
@@ -402,7 +402,7 @@ pub fn main() {
     let knn_answers = hnsw.parallel_search(&query, knbn, ef_search);
     let cpu_time: Duration = cpu_start.elapsed();
     let sys_time = sys_now.elapsed().unwrap().as_micros() as f32;
-    println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
+    println!(" ann requests sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     let mut recalls = Vec::<usize>::with_capacity(nb_query);
     let mut nb_returned = Vec::<usize>::with_capacity(nb_query);
     let mut last_distances_ratio = Vec::<f32>::with_capacity(nb_query);
