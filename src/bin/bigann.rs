@@ -129,7 +129,7 @@ fn read_query(path : PathBuf, nb_data : usize) -> Result< Vec<Vec<u8>>, anyhow::
 
 
 // read data and construct hnsw
-fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, ef_c : usize, max_nb_connection : usize, test : bool) -> Result<Hnsw::<u8, DistL2>, anyhow::Error> {
+fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, ef_c : usize, max_nb_connection : usize, dump : bool , test : bool) -> Result<Hnsw::<u8, DistL2>, anyhow::Error> {
     //
     // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
     let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
@@ -166,7 +166,6 @@ fn fill_hnsw(data_buf : &mut BufReader<File>, nb_data : usize, ef_c : usize, max
     println!(" ann construction sys time(s) {:?} cpu time {:?}", sys_now.elapsed().unwrap().as_secs(), cpu_time.as_secs());
     hnsw.dump_layer_info();
     // dump in a file. Must take care of name as tests runs in //
-    let dump = false;
     if dump {
         let fname = String::from("dumpbigann");
         log::info!("dumping in files : {} ... ", fname);
@@ -195,6 +194,9 @@ pub fn main() {
             .long("nbdata")
             .takes_value(true)
             .help("expecting numberof data to run on : 10 100 or 1000"))
+        .arg(Arg::new("dump")
+            .long("dump")
+            .help("flag to get a dump in files .hnsw.graph and .hnsw.data"))
         .arg(Arg::new("hnsw")
             .long("hnsw")
             .takes_value(true)
@@ -216,6 +218,11 @@ pub fn main() {
 
     let mut nb_data = 0;
     log::info!("running on first : {}", nb_data);
+    // check if we want the hnsw structure to be dumped
+    let mut to_dump = false;
+    if bigann_arg.is_present("dump") {
+        to_dump = true;
+    }
     // get hnsw if any
     let mut hnsw_name : Option<String> = None;
     if bigann_arg.is_present("hnsw") {
@@ -285,7 +292,7 @@ pub fn main() {
         }
         let data_file = data_file_res.unwrap();
         let mut data_buf = BufReader::new(data_file);
-        fill_hnsw(&mut data_buf, nb_data, ef_c, max_nb_connection, test)
+        fill_hnsw(&mut data_buf, nb_data, ef_c, max_nb_connection, to_dump, test)
     }
     else {
         log::info!(" hnsw passed , will reload from hnsw data in dir : {}", dirname);
