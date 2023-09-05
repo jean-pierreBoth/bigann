@@ -1,6 +1,6 @@
 # bigann
 
-This mini crate benches the crate [hnsw-rs](https://crates.io/crates/hnsw_rs) on sampled u8 vectors from the BIGANN benchmark. See [BIGANN](https://big-ann-benchmarks.com/)
+This mini crate benches the crate [hnsw-rs](https://crates.io/crates/hnsw_rs) on sampled u8 vectors from the BIGANN benchmark. See [BIGANN](https://big-ann-benchmarks.com/neurips21.html) and [IRISA](http://corpus-texmex.irisa.fr/)
 
 Files bigann_base.bvecs, bigann_query.bvecs must be dowloaded and installed in some directory (This amounts to 133Gb).
 Then depending on the size of the data you want to run on the first (10M, 100M, 1B) of the large file *bigann_base.bvecs* you download the corresponding ground truth as explained in the BIGANN web page.

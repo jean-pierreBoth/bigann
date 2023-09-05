@@ -28,8 +28,8 @@ path = "src/bin/bigann.rs"
 
 
 
-# hnsw_rs = {path = "../hnswlib-rs", version = "0.1.15"}
-hnsw_rs = {version = "0.1.15"}
+hnsw_rs = {path = "../hnswlib-rs", version = "0.1.16"}
+#hnsw_rs = {version = "0.1.15"}
 
 lazy_static = { version = "1.4"}
 
