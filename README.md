@@ -18,6 +18,8 @@ Use --dump to dump the hnsw structure for search variations
 For more see documentation (cargo doc --no-deps as usual) 
 ## Results for the first 10 Million data points.
 
+### Results with standard level sampling
+
 Results on Intel E5-2630 v3 @2.4GHz
 16 cores 2 thread / core
 
@@ -31,9 +33,7 @@ All parameters are explained in doc of  [hnsw-rs](https://crates.io/crates/hnsw_
 |  10   |     24      |   100   |    128    |   no   |     no      | 0.970  | 4845  |   1.001    |
 |  100  |     24      |   100   |    128    |   no   |     no      | 0.923  | 2411  |   1.003    |
 
-Results on Laptop with i7-10875H CPU @ 2.30GHz  8 core 2 Thread /core
 
-time for Hnsw structure construction user :1370 s,  cpu time 21493
 
 | knbn  | max_nb_conn | ef_cons | ef_search | extend | keep pruned | recall | req/s | last ratio |
 | :---: | :---------: | :-----: | :-------: | :----: | :---------: | :----: | :---: | :--------: |
@@ -43,3 +43,17 @@ time for Hnsw structure construction user :1370 s,  cpu time 21493
 |  100  |     24      |   400   |    128    |   no   |     no      | 0.938  | 2338  |   1.003    |
 |  10   |     24      |   800   |    128    |   no   |     no      | 0.975  | 4313  |   1.001    |
 |  100  |     24      |   800   |    128    |   no   |     no      | 0.9428 | 2151  |   1.0025   |
+
+
+###  Results with Amd Ryzen 9 7950 16 core and 0.5 scale modification factor
+
+With modified level sampling level (as documented in [hnsw-rs](https://crates.io/crates/hnsw_rs))
+we increase recall and have with max_nb_conn 48 better results than with max_nb_conn=24 without scale modification
+which decrease memory consumption
+
+| knbn  | max_nb_conn | ef_cons | ef_search | extend | keep pruned | recall | req/s | last ratio |
+| :---: | :---------: | :-----: | :-------: | :----: | :---------: | :----: | :---: | :--------: |
+|  10   |     48      |   100   |    128    |   no   |     no      | 0.997  | 6283  |   1.0001   |
+|  100  |     48      |   100   |    128    |   no   |     no      | 0.980  | 3152  |   1.0007   |
+|  10   |     24      |   100   |    128    |   no   |     no      | 0.989  | 9825  |   1.0003   |
+|  100  |     24      |   100   |    128    |   no   |     no      | 0.958  | 4897  |   1.0017   |
