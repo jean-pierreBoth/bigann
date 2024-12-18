@@ -179,7 +179,7 @@ where
     //
     // we will read data by block doing parallel insertion in Hnsw, read_data_block running async
     let nb_layer = 16.min((nb_data as f32).ln().trunc() as usize);
-    let default_block: usize = 10000;
+    let default_block: usize = 50000;
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
