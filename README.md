@@ -48,8 +48,8 @@ All parameters are explained in doc of  [hnsw-rs](https://crates.io/crates/hnsw_
 ###  Results with Amd Ryzen 9 7950 16 core and 0.5 scale modification factor
 
 With modified level sampling level (as documented in [hnsw-rs](https://crates.io/crates/hnsw_rs))
-we increase recall and have with max_nb_conn 48 better results than with max_nb_conn=24 without scale modification
-which decrease memory consumption
+we increase recall and have with max_nb_conn 48 better results than cited above with max_nb_conn=64 without scale modification.  
+This decreases memory consumption
 
 | knbn  | max_nb_conn | ef_cons | ef_search | extend | keep pruned | recall | req/s | last ratio |
 | :---: | :---------: | :-----: | :-------: | :----: | :---------: | :----: | :---: | :--------: |
