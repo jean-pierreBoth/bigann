@@ -2,7 +2,7 @@
 //! command syntax is:
 //! bigann --dir filesdir [--hnsw name] [--dump] --nbdata nbdata
 //! where :
-//!     -  --dir filedir gives directory where data query files are.
+//!     -  --dir filedir gives directory where data query files are (and possible hnsw dump)
 //!     -  --dump to get a dump of hnsw structure in dumpbigann.hnsw.data and dumpbigann.hnsw.graph
 //!     -  --hnsw name is optional and gives name of dump of hnsw to reload (useful to change query parameters
 //!     -  --nbdata nbdata gives the number of data (in millions) to run on. expect 10 100 or 1000
@@ -16,6 +16,7 @@
 // Then nbquery * num_id as uint42 and last nbquery * d as f32
 
 use cpu_time::ProcessTime;
+use memory_stats::memory_stats;
 use std::time::{Duration, SystemTime};
 
 use anyhow::anyhow;
@@ -401,7 +402,14 @@ pub fn main() {
         std::process::exit(1);
     }
     let hnsw = hnsw_res.unwrap();
-
+    //
+    if let Some(usage) = memory_stats() {
+        println!("memory usage after loading hnsw");
+        println!("Current physical memory usage: {}", usage.physical_mem);
+        println!("Current virtual memory usage: {}", usage.virtual_mem);
+    } else {
+        println!("Couldn't get the current memory usage :(");
+    }
     //
     let cpu_start = ProcessTime::now();
     let sys_now = SystemTime::now();
