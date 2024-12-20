@@ -391,8 +391,11 @@ pub fn main() {
             dirname
         );
         let hnsw_str = hnsw_name.unwrap();
-        reloader = HnswIo::new(Path::new(dirname), &hnsw_str);
-        let hnsw_loaded = reloader.load_hnsw::<u8, DistL2>().unwrap();
+        let reload_opt = ReloadOptions::new(true);
+        reloader = HnswIo::new_with_options(Path::new(dirname), &hnsw_str, reload_opt);
+        let mut hnsw_loaded = reloader.load_hnsw::<u8, DistL2>().unwrap();
+        // reload set it to true
+        hnsw_loaded.set_extend_candidates(false);
         //
         Ok(hnsw_loaded)
     };
